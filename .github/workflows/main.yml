@@ -1,4 +1,4 @@
-name: Build Wasm and Deploy to GitHub Pages
+name: Build Wasm and Push to gh-pages branch
 
 on:
   push:
@@ -6,19 +6,12 @@ on:
       - main # Uruchamia się po każdym pushu na gałąź main
   workflow_dispatch: # Pozwala uruchomić ręcznie z zakładki Actions
 
-# Uprawnienia wymagane do publikacji na GitHub Pages
+# Wymagane uprawnienie zapisu, aby utworzyć i zaktualizować gałąź gh-pages
 permissions:
-  contents: read
-  pages: write
-  id-token: write
-
-# Zapobiega nakładaniu się jednoczesnych wdrożeń
-concurrency:
-  group: "pages"
-  cancel-in-progress: false
+  contents: write
 
 jobs:
-  build:
+  build-and-deploy-branch:
     runs-on: ubuntu-latest
     steps:
       - name: Pobranie kodu z repozytorium
@@ -33,24 +26,16 @@ jobs:
         run: |
           mkdir -p dist
           cp index.html dist/
-          emcc tinywasm.c -o dist/tiny_wasm.js \
+          emcc tiny_wasm.c -o dist/tiny_wasm.js \
             -s EXPORTED_FUNCTIONS='["_parse_http_request", "_malloc", "_free"]' \
             -s EXPORTED_RUNTIME_METHODS='["stringToUTF8", "UTF8ToString", "lengthBytesUTF8", "getValue"]' \
             -s ALLOW_MEMORY_GROWTH=1 \
             -O2
 
-      - name: Przygotowanie artefaktu dla GitHub Pages
-        uses: actions/upload-pages-artifact@v3
+      - name: Utworzenie i wypchnięcie zawartości dist/ na gałąź gh-pages
+        uses: peaceiris/actions-gh-pages@v4
         with:
-          path: ./dist
-
-  deploy:
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    runs-on: ubuntu-latest
-    needs: build
-    steps:
-      - name: Publikacja na GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./dist
+          publish_branch: gh-pages
+          force_orphan: true # Tworzy czystą gałąź bez historii poprzednich buildów (oszczędza miejsce)
