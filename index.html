@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tiny Web Server - WebAssembly Playground</title>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #0f172a; color: #f8fafc; margin: 0; padding: 2rem; }
+        .container { max-width: 800px; margin: 0 auto; background: #1e293b; padding: 2rem; border-radius: 12px; box-shadow: 0 10px 25px rgba(0,0,0,0.3); }
+        h1 { color: #38bdf8; font-size: 1.5rem; margin-top: 0; }
+        textarea, select, input { width: 100%; background: #0f172a; border: 1px solid #334155; color: #f8fafc; padding: 0.75rem; border-radius: 6px; margin-top: 0.5rem; margin-bottom: 1rem; font-family: monospace; }
+        button { background: #0284c7; color: white; border: none; padding: 0.75rem 1.5rem; border-radius: 6px; font-weight: bold; cursor: pointer; transition: background 0.2s; }
+        button:hover { background: #0369a1; }
+        button:disabled { background: #475569; cursor: not-allowed; }
+        .output { background: #0f172a; border-left: 4px solid #38bdf8; padding: 1rem; border-radius: 4px; margin-top: 1.5rem; font-family: monospace; white-space: pre-wrap; }
+        .status-badge { display: inline-block; padding: 0.25rem 0.75rem; border-radius: 9999px; font-size: 0.875rem; font-weight: bold; }
+        .status-200 { background: #065f46; color: #34d399; }
+        .status-err { background: #991b1b; color: #fca5a5; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🚀 Tiny Web Server (Wasm Edition)</h1>
+        <p>Test the C request parser compiled directly to WebAssembly running in your browser.</p>
+
+        <label for="presets">Select Preset Request:</label>
+        <select id="presets" onchange="loadPreset()">
+            <option value="GET /index.html HTTP/1.1">GET /index.html (Static HTML)</option>
+            <option value="GET /welcome.jpg HTTP/1.1">GET /welcome.jpg (Static Image)</option>
+            <option value="GET /cgi-bin/adder?15&21 HTTP/1.1">GET /cgi-bin/adder?15&21 (Dynamic CGI)</option>
+            <option value="POST /index.html HTTP/1.1">POST /index.html (Unsupported Method)</option>
+        </select>
+
+        <label for="requestInput">Raw HTTP Request Header:</label>
+        <textarea id="requestInput" rows="4">GET /index.html HTTP/1.1
+Host: localhost
+User-Agent: Mozilla/5.0</textarea>
+
+        <button id="runBtn" disabled>Loading WebAssembly...</button>
+
+        <div class="output" id="outputResult">Waiting for Wasm module to initialize...</div>
+    </div>
+
+    <!-- Emscripten generated JS glue code (compiled output) -->
+    <script src="tiny_wasm.js"></script>
+    <script>
+        function loadPreset() {
+            const preset = document.getElementById('presets').value;
+            document.getElementById('requestInput').value = preset + "\r\nHost: localhost\r\n\r\n";
+        }
+
+        // Module initialization handled by Emscripten
+        Module.onRuntimeInitialized = function() {
+            const btn = document.getElementById('runBtn');
+            btn.disabled = false;
+            btn.innerText = "Process Request via Wasm";
+            document.getElementById('outputResult').innerText = "Wasm module loaded successfully! Click the button above.";
+
+            btn.onclick = function() {
+                const rawRequest = document.getElementById('requestInput').value;
+
+                // Allocate memory in Wasm heap for input string
+                const requestLen = lengthBytesUTF8(rawRequest) + 1;
+                const requestPtr = _malloc(requestLen);
+                stringToUTF8(rawRequest, requestPtr, requestLen);
+
+                // Allocate memory for output struct (HttpResponseInfo)
+                // Struct size: method(16) + uri(256) + version(16) + filetype(32) + is_static(4) + status_code(4) = ~328 bytes
+                const structSize = 328;
+                const structPtr = _malloc(structSize);
+
+                // Call exported C function
+                _parse_http_request(requestPtr, structPtr);
+
+                // Read values back from Wasm memory buffer using getValue / data views
+                const method = UTF8ToString(structPtr);
+                const uri = UTF8ToString(structPtr + 16);
+                const version = UTF8ToString(structPtr + 16 + 256);
+                const filetype = UTF8ToString(structPtr + 16 + 256 + 16);
+                
+                // Read integers (32-bit int offset)
+                const is_static = HEAP32[(structPtr + 16 + 256 + 16 + 32) >> 2];
+                const status_code = HEAP32[(structPtr + 16 + 256 + 16 + 32 + 4) >> 2];
+
+                // Free allocated memory
+                _free(requestPtr);
+                _free(structPtr);
+
+                // Render Results
+                const badgeClass = status_code === 200 ? 'status-200' : 'status-err';
+                document.getElementById('outputResult').innerHTML = `
+<span class="status-badge ${badgeClass}">HTTP Status: ${status_code}</span>
+
+<strong>Parsed Details:</strong>
+• Method:    ${method}
+• URI:       ${uri}
+• Version:   ${version}
+• Handler:   ${is_static ? 'Static Content' : 'Dynamic CGI Script'}
+• File Type: ${filetype}
+                `.trim();
+            };
+        };
+    </script>
+</body>
+</html>
