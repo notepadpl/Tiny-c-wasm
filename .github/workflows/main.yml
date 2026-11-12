@@ -26,7 +26,7 @@ jobs:
         run: |
           mkdir -p dist
           cp index.html dist/
-          emcc tiny_wasm.c -o dist/tiny_wasm.js \
+          emcc tinywasm.c -o dist/tiny_wasm.js \
             -s EXPORTED_FUNCTIONS='["_parse_http_request", "_malloc", "_free"]' \
             -s EXPORTED_RUNTIME_METHODS='["stringToUTF8", "UTF8ToString", "lengthBytesUTF8", "getValue"]' \
             -s ALLOW_MEMORY_GROWTH=1 \
